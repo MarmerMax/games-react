@@ -6,7 +6,11 @@ export function getRandomInt(max: number) {
     return Math.floor(Math.random() * max);
 }
 
-export function createObjects(width: number, height: number, houseIndex: number) {
+// export function createObjects(width: number, height: number, houseIndex: number) {
+export function createObjects(width: number, height: number) {
+
+    const houseIndex = width * height - 1;
+
     const gameObjects: DeskCell[] = [];
     let time = 1;
     let target = 0;

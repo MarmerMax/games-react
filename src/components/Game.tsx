@@ -10,6 +10,11 @@ import Desk from "./Desk";
 import Timer from "./Timer";
 import {CellVariant} from "./Cell";
 import {createObjects, getRandomInt, Moves} from "../utils/utils";
+import {useSelector} from "react-redux";
+import {useTypedSelector} from "../hooks/useTypeSelector";
+import {useActions} from "../hooks/useActions";
+import GameActions from "./GameActions";
+import GameResults from "./GameResults";
 
 
 export interface UserPlace {
@@ -27,7 +32,7 @@ interface Props {
     options: Options;
 }
 
-interface GameHint {
+export interface GameHint {
     type: HintType;
     description: string;
 }
@@ -36,24 +41,55 @@ const eatVariants = [CellVariant.Target, CellVariant.Fruit, CellVariant.Time];
 
 
 const Game = ({options}: Props) => {
-    let history = useHistory();
-    const HOUSE_PLACE = options.xSize * options.ySize - 1;
-    const [userPlace, setUserPlace] = useState<UserPlace>({x: options.xSize - 1, y: options.ySize - 1});
-    const [objects, setObjects] = useState<DeskCell[]>(createObjects(options.xSize, options.ySize, HOUSE_PLACE));
 
-    const [hint, setHint] = useState<GameHint | undefined>();
+    const {round, extraTimeCounter} = useTypedSelector(state => state.userScore);
+    const {
+        isWin,
+        isLoose,
+        hint,
+        objects,
+        userPlace,
+        isFinished,
+        isStarted
+    } = useTypedSelector(state => state.gameState);
 
-    const [round, setRound] = useState<number>(1);
-    const [score, setScore] = useState<number>(0);
-    // const [extraTime, setExtraTime] = useState<boolean>(false);
-    const [extraTimeCounter, setExtraTimeCounter] = useState<number>(0);
+    const {
+        addExtraTime,
+        nextRound,
+        addScore,
+        gameOver,
+        subExtraTime,
+        subScore,
+        winRound,
+        createStartState,
+        finishRound,
+        looseRound,
+        restartRound,
+        startRound,
+        setUserPlace,
+        updateObjects,
+        setHint
+    } = useActions();
 
-    const [isWin, setIsWin] = useState<boolean>(false);
-    const [isLoose, setIsLoose] = useState<boolean>(false);
-    const [isStarted, setIsStarted] = useState<boolean>(false);
-    const [isFinished, setIsFinished] = useState<boolean>(false);
 
     useEffect(() => {
+        createStartState(options.xSize, options.ySize);
+
+        return () => {
+            gameOver();
+            createStartState(options.xSize, options.ySize);
+        }
+
+    }, []);
+
+    let history = useHistory();
+    const HOUSE_PLACE = options.xSize * options.ySize - 1;
+
+    useEffect(() => {
+        if (!isStarted) {
+            return;
+        }
+
         const userCurrentPlace = userPlace.x + (userPlace.y * options.xSize);
 
         if (eatVariants.includes(objects[userCurrentPlace]?.type)) {
@@ -61,7 +97,7 @@ const Game = ({options}: Props) => {
 
             // if user catch target
             if (objects[userCurrentPlace].type === CellVariant.Target) {
-                setScore(state => state + 5);
+                addScore(5);
 
 
                 const fruits = newObjects.filter(item => item.type === CellVariant.Fruit);
@@ -76,28 +112,24 @@ const Game = ({options}: Props) => {
                 }
 
             } else if (objects[userCurrentPlace].type === CellVariant.Time) {
-                setScore(state => state + 2);
-                setExtraTimeCounter(state => state + 1);
-
-
-                // setExtraTime(true);
+                addScore(2);
+                addExtraTime();
             } else {
-                setScore(state => state + 1);
+                addScore(1);
             }
 
             newObjects[userCurrentPlace].type = CellVariant.Default;
-            setObjects(newObjects);
+            updateObjects(newObjects);
         }
 
         if (!objects.some(item => item.type === CellVariant.Fruit) && userCurrentPlace === HOUSE_PLACE) {
-            setIsWin(true);
+            winRound();
             setHint({type: "success", description: "Congratulation you Win!"});
-            setScore(state => state + 10);
+            addScore(10);
         }
 
 
     }, [userPlace]);
-
 
     const handleMove = (
         userPlace: UserPlace,
@@ -125,58 +157,33 @@ const Game = ({options}: Props) => {
     };
 
     const handleNextRound = () => {
-        setHint(undefined);
-        setRound(state => state + 1);
-
-        setIsWin(false);
-        setIsLoose(false);
-        setIsStarted(false);
-        setIsFinished(false);
-
-        // setExtraTime(false);
-        setObjects(createObjects(options.xSize, options.ySize, HOUSE_PLACE));
+        nextRound();
+        createStartState(options.xSize, options.ySize);
     };
 
     const handleLoose = () => {
-        setIsLoose(true);
-        setHint({type: "error", description: "Oops!!! Time is out!"});
+        looseRound();
     };
 
     const handleStart = () => {
-        setIsStarted(true);
-        setIsFinished(false);
+        startRound();
     };
 
     const handleTryAgain = () => {
-        setHint(undefined);
-        setRound(1);
-        setScore(0);
-        setExtraTimeCounter(0);
-
-        setIsWin(false);
-        setIsLoose(false);
-        setIsStarted(false);
-        setIsFinished(false);
-
-        setUserPlace({x: options.xSize - 1, y: options.ySize - 1});
-        setObjects(createObjects(options.xSize, options.ySize, HOUSE_PLACE));
+        gameOver();
+        createStartState(options.xSize, options.ySize);
     };
 
     const handleUseExtraTime = () => {
-        setHint(undefined);
-        setScore(state => state - 5);
-        setExtraTimeCounter(state => state - 1);
-
-        setIsFinished(false);
+        subScore(5);
+        subExtraTime();
+        restartRound();
     };
 
     const handleIsFinished = () => {
-        // if (extraTime) {
         if (extraTimeCounter > 0) {
+            finishRound();
             setHint({type: "success", description: "You have extra time!"});
-
-            setIsStarted(false);
-            setIsFinished(true);
             return;
         }
 
@@ -207,32 +214,10 @@ const Game = ({options}: Props) => {
             />
             }
 
-            {isLoose && hint &&
-            <GameWrapper>
-                <Hint description={hint.description} type={hint.type}/>
-                <MenuButton buttonType="game" onClick={handleTryAgain}>Let's try Again!</MenuButton>
-            </GameWrapper>
-            }
+            <GameActions extraTimeCounter={extraTimeCounter} hint={hint} isLoose={isLoose} isWin={isWin}
+                         onNextRound={handleNextRound} onTryAgain={handleTryAgain} onUseExtraTime={handleUseExtraTime}/>
 
-            {isWin && hint &&
-            <GameWrapper>
-                <Hint description={hint.description} type={hint.type}/>
-                <MenuButton buttonType="game" onClick={handleNextRound}>Next Round!</MenuButton>
-            </GameWrapper>
-            }
-
-            {/*{!isWin && !isLoose && extraTime && hint &&*/}
-            {!isWin && !isLoose && extraTimeCounter > 0 && hint &&
-            <GameWrapper>
-                <Hint description={hint.description} type={hint.type}/>
-                <MenuButton buttonType="game" onClick={handleUseExtraTime}>Use extra time!</MenuButton>
-            </GameWrapper>
-            }
-
-            <GameWrapper>
-                <span>score: {score}</span>
-                <span>extra time: {extraTimeCounter}</span>
-            </GameWrapper>
+            <GameResults/>
 
             <Wrapper>
                 <MenuButton onClick={handleOptionsButton}>Options</MenuButton>
